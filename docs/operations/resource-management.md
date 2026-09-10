@@ -127,4 +127,65 @@ Instead, their resource requests/limits are determined only by the namespace def
 
 ---
 
+## 8. When a Node Is Already Full: `packagePriorityClassName`
+
+A package stage can fail to start on a node that has no CPU or memory left, even though NodeWright has work to do there. The pod is rejected with `OutOfcpu` (or `OutOfmemory`) and the stage never runs.
+
+```
+$ kubectl get pod -n nodewright
+NAME                                    READY   STATUS      RESTARTS   AGE
+my-skyhook-mypackage-1.0.0-apply-node1  0/3     OutOfcpu    0          25h
+```
+
+### Why this is not a scheduling problem
+
+NodeWright pins every package and interrupt pod to its node with `spec.nodeName`. That is deliberate — the pod exists to act on *that* host — but it means the pod never goes through the scheduler. So the usual answers do not apply:
+
+- The scheduler never sees the pod, so **scheduler preemption never runs for it**. Priority alone will not push other pods aside.
+- `OutOfcpu` is a *kubelet admission* rejection, not the scheduler's `Unschedulable`. The kubelet is being handed a pod for a node that cannot fit it.
+
+The kubelet has its own admission-time preemption and it will evict lower-priority pods to admit a pod — but only for pods it considers **critical**, which means a priority value of at least `2000000000`.
+
+### Why only the two system classes work
+
+Kubernetes caps user-defined PriorityClasses at `1000000000`:
+
+```
+maximum allowed value of a user defined priority is 1000000000
+```
+
+That is half the critical threshold, so **a custom PriorityClass can never enable this behaviour**, no matter how high you set it. Only the two built-in classes qualify:
+
+| PriorityClass | Value | Enables kubelet preemption |
+|---|---|---|
+| `system-node-critical` | 2000001000 | ✅ |
+| `system-cluster-critical` | 2000000000 | ✅ |
+| any custom class | ≤ 1000000000 | ❌ — affects node-pressure eviction order only |
+
+### Which of the two to use
+
+**Use `system-cluster-critical`.** Both clear the threshold, but they are not interchangeable. The kubelet decides what a pod may evict with `kubetypes.Preemptable`: a critical pod may always evict a non-critical one, and beyond that it is a strict `>` on priority value. `system-node-critical` is 1000 points higher than `system-cluster-critical`, so a package pod running as node-critical can evict pods *in the cluster-critical band* — CoreDNS, metrics-server, and whatever else your cluster puts there. `system-cluster-critical` sits exactly at the floor of that band, so it can still evict ordinary workloads to get a stage moving but cannot displace other critical infrastructure. It is the smaller hammer, and it is the one that fits.
+
+### Enabling it
+
+```yaml
+controllerManager:
+  manager:
+    env:
+      packagePriorityClassName: "system-cluster-critical"
+```
+
+Unset by default: package pods run at priority 0 and simply wait for room.
+
+> [!WARNING]
+> This is not free. A critical package pod will cause the kubelet to **evict running workloads** to make room for it, best-effort first, then burstable, then guaranteed. Turn it on when a stalled node upgrade is worse than a restarted workload — not by default.
+
+**Caveats:**
+
+- Some clusters restrict the system priority classes with a `ResourceQuota` scoped by `PriorityClass`. Where that is in force, pod creation is rejected outright instead of the pod being admitted, which trades a stalled stage for a failing one. Check with `kubectl get resourcequota -n <namespace> -o yaml` before enabling.
+- The kubelet only preempts when *every* admission failure is a resource shortfall. If the pod is also rejected for another reason (a taint it does not tolerate, a node selector mismatch), no eviction happens.
+- This is a backstop, not a capacity plan. If package pods routinely land on full nodes, size the nodegroup with headroom for upgrades and spread the workloads pinned to it.
+
+---
+
 For more information, see the [Kubernetes documentation on resource management](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/) and [LimitRange](https://kubernetes.io/docs/concepts/policy/limit-range/). 

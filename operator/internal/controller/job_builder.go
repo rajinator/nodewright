@@ -321,8 +321,9 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 			},
 		},
 		Spec: corev1.PodSpec{
-			NodeName:      nodeName,
-			RestartPolicy: corev1.RestartPolicyOnFailure,
+			NodeName:          nodeName,
+			RestartPolicy:     corev1.RestartPolicyOnFailure,
+			PriorityClassName: opts.PackagePriorityClassName,
 			InitContainers: []corev1.Container{
 				{
 					Name:            fmt.Sprintf("%s-init", trunstr(_package.Name, 43)),
@@ -464,8 +465,9 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 			},
 		},
 		Spec: corev1.PodSpec{
-			NodeName:      nodeName,
-			RestartPolicy: corev1.RestartPolicyOnFailure,
+			NodeName:          nodeName,
+			RestartPolicy:     corev1.RestartPolicyOnFailure,
+			PriorityClassName: opts.PackagePriorityClassName,
 			InitContainers: []corev1.Container{
 				{
 					Name:  InterruptContainerName,

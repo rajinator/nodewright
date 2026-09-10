@@ -60,6 +60,27 @@ spec:
                 {{- end }}
                 {{- end }}
               {{- end }}
+        {{- /* Selector is written out here rather than taken from values because it has to
+               match the release-templated pod label; a user-supplied selector in values.yaml
+               could not name it. Matches the PodDisruptionBudget selector below, so the two
+               always describe the same set of pods. */}}
+        {{- if eq .Values.controllerManager.podAntiAffinity "required" }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app: {{ include "chart.fullname" . }}-controller-manager
+        {{- else if eq .Values.controllerManager.podAntiAffinity "preferred" }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: {{ include "chart.fullname" . }}-controller-manager
+        {{- end }}
       {{- with .Values.controllerManager.tolerations }}
       tolerations: 
         {{- toYaml . | nindent 6 }}
@@ -117,6 +138,8 @@ spec:
           value: {{ quote .Values.controllerManager.manager.env.runtimeRequiredTaint }}
         - name: PAUSE_IMAGE
           value: {{ quote .Values.controllerManager.manager.env.pauseImage }}
+        - name: PACKAGE_PRIORITY_CLASS_NAME
+          value: {{ quote .Values.controllerManager.manager.env.packagePriorityClassName }}
         - name: AGENT_IMAGE
           value: {{ .Values.controllerManager.manager.agent.repository }}{{- if and (.Values.controllerManager.manager.agent.tag) (.Values.controllerManager.manager.agent.digest) }}:{{ .Values.controllerManager.manager.agent.tag }}@{{ .Values.controllerManager.manager.agent.digest }}{{- else if .Values.controllerManager.manager.agent.digest }}@{{ .Values.controllerManager.manager.agent.digest }}{{- else }}:{{ .Values.controllerManager.manager.agent.tag }}{{- end }}
         - name: KUBERNETES_CLUSTER_DOMAIN

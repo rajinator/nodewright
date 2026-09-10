@@ -455,6 +455,67 @@ var _ = Describe("pod builders", func() {
 		Expect(pod.Spec.ImagePullSecrets).To(ContainElement(corev1.LocalObjectReference{Name: "regcred"}))
 	})
 
+	It("Pods leave priorityClassName unset when PackagePriorityClassName is empty", func() {
+		pod := createPodFromPackage(
+			opts,
+			&v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "foo", Version: "1.1.2"},
+				Image:      "foo/bar",
+			},
+			&wrapper.Skyhook{NodeWright: &v1alpha1.NodeWright{}},
+			"node1",
+			v1alpha1.StageApply,
+		)
+		Expect(pod.Spec.PriorityClassName).To(BeEmpty())
+	})
+
+	It("Pods carry PackagePriorityClassName when it is set", func() {
+		opts.PackagePriorityClassName = "system-node-critical"
+		pod := createPodFromPackage(
+			opts,
+			&v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "foo", Version: "1.1.2"},
+				Image:      "foo/bar",
+			},
+			&wrapper.Skyhook{NodeWright: &v1alpha1.NodeWright{}},
+			"node1",
+			v1alpha1.StageApply,
+		)
+		Expect(pod.Spec.PriorityClassName).To(Equal("system-node-critical"))
+	})
+
+	It("Interrupt pods carry PackagePriorityClassName when it is set", func() {
+		opts.PackagePriorityClassName = "system-node-critical"
+		pod := createInterruptPodForPackage(
+			opts,
+			&v1alpha1.Interrupt{Type: v1alpha1.REBOOT},
+			"argEncode",
+			&v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "foo", Version: "1.1.2"},
+				Image:      "foo/bar",
+			},
+			&wrapper.Skyhook{NodeWright: &v1alpha1.NodeWright{}},
+			"node1",
+			v1alpha1.StageInterrupt,
+		)
+		Expect(pod.Spec.PriorityClassName).To(Equal("system-node-critical"))
+	})
+
+	It("Jobs propagate PackagePriorityClassName into the pod template", func() {
+		opts.PackagePriorityClassName = "system-cluster-critical"
+		job := createJobFromPackage(
+			opts,
+			&v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "foo", Version: "1.1.2"},
+				Image:      "foo/bar",
+			},
+			&wrapper.Skyhook{NodeWright: &v1alpha1.NodeWright{}},
+			"node1",
+			v1alpha1.StageApply,
+		)
+		Expect(job.Spec.Template.Spec.PriorityClassName).To(Equal("system-cluster-critical"))
+	})
+
 	It("Pods carry the package gracefulShutdown as the pod terminationGracePeriodSeconds", func() {
 		pod := createPodFromPackage(
 			opts,

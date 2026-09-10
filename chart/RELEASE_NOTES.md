@@ -5,6 +5,28 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
+### Behavior Changes
+
+- **Controller-manager replicas now prefer separate nodes.** A soft
+  `podAntiAffinity` on `kubernetes.io/hostname` is applied by default, tunable
+  with `controllerManager.podAntiAffinity` (`preferred` | `required` | `""`).
+  Kubernetes never rebalances running pods, so on a dedicated nodegroup that
+  grew after the operator was first scheduled both replicas would sit on the
+  node they originally landed on and a single drain took the operator offline.
+  `preferred` never blocks scheduling, so single-node clusters are unaffected.
+  Existing installs pick this up on the next rollout; no action required.
+
+### New Features
+
+- **`controllerManager.manager.env.packagePriorityClassName`** sets a
+  `priorityClassName` on package and interrupt pods, so a package stage can
+  start on a node that is already full instead of being rejected `OutOfcpu`
+  indefinitely. Unset by default; `system-cluster-critical` is the recommended
+  value. Only the two built-in system classes have any effect here, and
+  enabling it lets the kubelet evict running workloads to make room — see
+  [resource-management.md](../docs/operations/resource-management.md#8-when-a-node-is-already-full-packagepriorityclassname)
+  for why a custom PriorityClass cannot work and when this is worth turning on.
+
 ## chart/v0.18.0 - 2026-08-17
 
 ### Breaking Changes

@@ -70,6 +70,18 @@ spec:
                   operator: In
                   values:
                     - linux
+        # Mirrors the chart's controllerManager.podAntiAffinity=preferred default. Kubernetes
+        # never rebalances running pods, so without this replicas stay wherever they first
+        # landed and a single node drain can take the whole operator out. Preferred rather than
+        # required so a single-node cluster still schedules.
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    control-plane: controller-manager
       securityContext:
         runAsNonRoot: true
         # TODO(user): For common cases that do not require escalating privileges
@@ -138,6 +150,11 @@ spec:
             value: nodewright.nvidia.com=runtime-required:NoSchedule
           - name: PAUSE_IMAGE
             value: registry.k8s.io/pause:3.10
+          # Empty leaves package pods at priority 0. Only system-node-critical /
+          # system-cluster-critical change whether a package can start on a full node; see
+          # PackagePriorityClassName in skyhook_controller.go for why a custom class cannot.
+          - name: PACKAGE_PRIORITY_CLASS_NAME
+            value: ""
           - name: AGENT_IMAGE
             value: ghcr.io/nvidia/nodewright/agent:latest
         image: controller:latest

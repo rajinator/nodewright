@@ -140,6 +140,24 @@ type SkyhookOperatorOptions struct {
 	PauseImage           string        `env:"PAUSE_IMAGE, default=registry.k8s.io/pause:3.10"`
 	AgentImage           string        `env:"AGENT_IMAGE, default=ghcr.io/nvidia/nodewright/agent:latest"` // TODO: pin a released agent version instead of :latest
 	AgentLogRoot         string        `env:"AGENT_LOG_ROOT, default=/var/log/skyhook"`
+	// PackagePriorityClassName is set on every package and interrupt pod. Empty (the default)
+	// leaves the field unset, so pods run at priority 0.
+	//
+	// Only "system-node-critical" and "system-cluster-critical" do anything useful here, and
+	// the reason is not obvious. Package pods are pinned with spec.nodeName, so they never
+	// enter the scheduler and scheduler preemption can never run for them; the kubelet admits
+	// them directly and rejects them OutOf<resource> when the node is full. The kubelet has its
+	// own admission-time preemption, but it fires only for pods kubetypes.IsCriticalPod accepts,
+	// which means priority >= 2000000000. A user-defined PriorityClass cannot reach that:
+	// ValidatePriorityClass caps non-"system-" classes at 1000000000. So the two built-in system
+	// classes are the only values that let a package stage evict its way onto a saturated node.
+	// Anything else is inert for admission and only affects node-pressure eviction order.
+	//
+	// Of the two, "system-cluster-critical" is the one to reach for. kubetypes.Preemptable lets
+	// a pod evict anything of strictly lower priority, and node-critical outranks
+	// cluster-critical by 1000, so a node-critical package pod can evict CoreDNS and the rest of
+	// that band. Cluster-critical clears admission without displacing other critical pods.
+	PackagePriorityClassName string `env:"PACKAGE_PRIORITY_CLASS_NAME"`
 	// MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
 	// rename. LegacyCleanupDelay is how long after a Skyhook finishes migrating the
 	// operator keeps its legacy skyhook.nvidia.com node state / pods / ConfigMap labels

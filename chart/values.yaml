@@ -28,6 +28,16 @@ controllerManager:
   #     - gpu-workload
   nodeAffinity:
     matchExpressions: []
+  ## podAntiAffinity: how hard to spread controller replicas across nodes, on
+  ## kubernetes.io/hostname. Kubernetes does not rebalance running pods, so without this a
+  ## dedicated nodegroup that grew after the operator was first scheduled keeps every replica
+  ## on the node it originally landed on, and one node failure or drain takes the operator out.
+  ##   "preferred" (default) - spread when possible; never blocks scheduling. Safe on
+  ##                           single-node clusters, where replicas simply co-locate.
+  ##   "required"            - never co-locate. Replicas beyond the node count stay Pending,
+  ##                           so keep replicas <= schedulable nodes.
+  ##   ""                    - disabled.
+  podAntiAffinity: preferred
   manager:
     containerSecurityContext:
       allowPrivilegeEscalation: false
@@ -98,6 +108,27 @@ controllerManager:
       runtimeRequiredTaint: nodewright.nvidia.com=runtime-required:NoSchedule
       ## puaseImage: is the image used for the pause container in the operator controller.
       pauseImage: registry.k8s.io/pause:3.10
+      ## packagePriorityClassName: priorityClassName set on every package and interrupt pod.
+      ## Empty (the default) leaves it unset and pods run at priority 0.
+      ##
+      ## Only "system-node-critical" and "system-cluster-critical" have any effect on whether a
+      ## package can start on a full node. Package pods are pinned with spec.nodeName, so they
+      ## bypass the scheduler entirely and the kubelet admits them directly, rejecting them
+      ## OutOfcpu / OutOfmemory when the node has no room. The kubelet will evict lower-priority
+      ## pods to make room, but only for pods it considers critical, which means a priority of
+      ## at least 2000000000 -- and Kubernetes caps user-defined PriorityClasses at 1000000000.
+      ## A custom class therefore cannot buy this; it only changes node-pressure eviction order.
+      ##
+      ## Prefer "system-cluster-critical" over "system-node-critical". The kubelet lets a pod
+      ## evict anything of strictly lower priority, and node-critical outranks cluster-critical
+      ## by 1000, so a node-critical package pod can evict CoreDNS and friends. Cluster-critical
+      ## sits at the floor of the critical band: enough to clear admission, not enough to
+      ## displace other critical infrastructure.
+      ##
+      ## Set this only if you want package stages to evict other workloads to proceed. Some
+      ## clusters also restrict the system classes via ResourceQuota, which makes pod creation
+      ## fail instead; see docs/operations/resource-management.md.
+      packagePriorityClassName: ""
     image:
       repository: ghcr.io/nvidia/nodewright/operator
       tag: "v0.19.0" ## if both tag and digest are omitted, defaults to the chart appVersion
